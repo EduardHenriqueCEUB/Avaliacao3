@@ -1,3 +1,23 @@
+# ---------------------------------------------------------------------------
+# Regras do projeto
+# ---------------------------------------------------------------------------
+
+# Base de dados, modelo treinado e banco: grandes demais para o GitHub.
+# Cada pessoa gera a própria pasta data/ com os scripts (veja o README).
+data/
+
+# Ambiente virtual do Python
+venv/
+.venv/
+
+# Configurações locais de editor
+.vscode/
+.idea/
+
+# ---------------------------------------------------------------------------
+# Modelo padrão do GitHub para projetos Python
+# ---------------------------------------------------------------------------
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
