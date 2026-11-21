@@ -40,10 +40,160 @@ Use a mesma versão do Python em todos os computadores, para evitar diferenças.
 * Cerca de 3 GB livres no disco, só durante o download da base. Depois de pronto, a pasta `data/` ocupa uns 800 MB.
 * 8 GB de RAM são suficientes. O passo mais pesado (tratamento dos dados) usa cerca de 1 GB, e a API ligada usa cerca de 300 MB.
 * Internet, só para baixar a base na primeira vez.
+* Para rodar com Docker (recomendado): **Docker Desktop** instalado e aberto. Não precisa instalar Python nem as bibliotecas.
 
 #####
 
-## Como executar
+## Como executar com Docker (recomendado)
+
+Com o Docker, o projeto inteiro roda com **um único comando**: ele baixa a base, trata os dados, treina o modelo,
+cria o banco e liga a API. Não é preciso instalar Python, criar o ambiente virtual nem rodar os scripts um por um.
+(Testado no Windows com Docker Desktop.)
+
+#### Passo a passo
+
+1. Instale o **Docker Desktop**, abra e espere a mensagem *Engine running*. Para conferir, rode no terminal:
+
+   ```
+   docker compose version
+   ```
+
+2. Baixe o projeto:
+
+   ```
+   git clone https://github.com/EduardHenriqueCEUB/Avaliacao3.git
+   cd Avaliacao3
+   ```
+
+3. Suba tudo:
+
+   ```
+   docker compose up --build
+   ```
+
+   Na **primeira vez** leva alguns minutos, principalmente pelo download da base (1,4 GB). Nas próximas vezes, os passos
+   já feitos são pulados e a API liga em segundos.
+
+4. Quando aparecer `Application startup complete.`, abra no navegador:
+
+   ```
+   http://localhost:8000/docs
+   ```
+
+5. Para desligar, aperte `Ctrl + C` (ou use `docker compose down` em outro terminal). Os dados são mantidos.
+   Para apagar **tudo** e recomeçar do zero: `docker compose down -v`.
+
+Mais detalhes, comandos úteis e problemas comuns estão no arquivo [DOCKER.md](DOCKER.md).
+
+#### Como funciona
+
+```mermaid
+flowchart LR
+    subgraph DOCKER["docker compose up"]
+        P["<b>preparar</b><br/>roda uma vez e termina"]
+        V[("volume dados<br/>/app/data")]
+        API["<b>api</b><br/>FastAPI + uvicorn<br/>porta 8000"]
+        P -->|"grava: base, modelo e banco"| V
+        V -->|"lê"| API
+        P -.->|"só liga após terminar com sucesso"| API
+    end
+    G["GroupLens<br/>(internet)"] -->|"book-genome.zip, 1,4 GB<br/>só na 1ª vez"| P
+    U["Navegador<br/>localhost:8000/docs"] -->|HTTP| API
+```
+
+* **`preparar`** executa os passos 3 a 7 da seção [Como executar sem Docker](#como-executar-sem-docker-manual),
+  um depois do outro, e termina. O que já foi feito é pulado.
+* **`api`** só liga depois que o `preparar` termina com sucesso, porque a API se recusa a ligar sem o modelo e o banco.
+* Os dados ficam num **volume do Docker** (`/app/data`). Ele sobrevive a `docker compose down`, então os usuários criados
+  pela API não se perdem quando o container é desligado.
+* A base de dados **não entra na imagem** (são 1,4 GB): ela é baixada uma vez, para o volume.
+
+| Arquivo | Para que serve |
+|---|---|
+| `Dockerfile` | receita da imagem (Python 3.14 + bibliotecas + código) |
+| `docker-compose.yml` | define os dois serviços (`preparar` e `api`) e o volume de dados |
+| `docker/preparar.py` | roda os passos de preparação e confere se cada um realmente terminou |
+| `docker-compose.local-data.yml` | opcional: usa a pasta `data/` do computador em vez do volume |
+| `.dockerignore` | o que não entra na imagem (principalmente a pasta `data/`) |
+
+#### Roteiro de teste no Swagger
+
+Com a API no ar em `http://localhost:8000/docs`, use os endpoints nesta ordem (clique em *Try it out* e depois em *Execute*):
+
+1. `GET /livros/busca`: procure um livro pelo título (por exemplo, `harry potter`) e anote o `livro_id`.
+2. `POST /usuarios`: crie um usuário com algumas avaliações (use `livro_id`s da busca) e anote o `usuario_id`.
+3. `GET /usuarios/{usuario_id}/recomendacoes`: veja a lista de livros recomendados e o motivo de cada um.
+4. `GET /usuarios/{usuario_id}`: depois de `docker compose down` e `docker compose up`, o usuário continua lá.
+
+#####
+
+## Evidências de funcionamento
+
+Os prints abaixo mostram que o Docker está instalado, como o projeto sobe em container e o sistema funcionando.
+
+### 1. O Docker está instalado e o projeto tem os arquivos de container
+
+![Versões do Docker e do Docker Compose](docs/evidencias/01-docker-instalado.png)
+
+*Docker e Docker Compose instalados na máquina.*
+
+![Conteúdo do Dockerfile](docs/evidencias/02-dockerfile.png)
+
+*O `Dockerfile` do projeto.*
+
+![Arquivos do Docker no repositório do GitHub](docs/evidencias/03-arquivos-no-github.png)
+
+*Os arquivos de containerização no repositório.*
+
+### 2. Como funciona: preparação e containers
+
+![Preparação dos dados e subida da API](docs/evidencias/04-preparacao-completa.png)
+
+*Primeira execução: o serviço `preparar` conclui as 4 etapas (base com 350.332 usuários e 5.152.656 avaliações) e a API liga.*
+
+![Estado dos containers](docs/evidencias/05-docker-compose-ps.png)
+
+*`docker compose ps`: a API aparece como `healthy`.*
+
+![Containers no Docker Desktop](docs/evidencias/06-docker-desktop-containers.png)
+
+*Os containers no Docker Desktop: `api` em execução e `preparar` já finalizado.*
+
+![Volume de dados do Docker](docs/evidencias/07-docker-volume.png)
+
+*O volume `dados`, onde ficam a base, o modelo e o banco.*
+
+### 3. O sistema rodando
+
+![Documentação interativa da API (Swagger)](docs/evidencias/08-swagger.png)
+
+*A API no ar em `http://localhost:8000/docs`.*
+
+![Busca de livros](docs/evidencias/09-busca-livros.png)
+
+*`GET /livros/busca`: busca de livros por título.*
+
+![Criação de usuário](docs/evidencias/10-criar-usuario.png)
+
+*`POST /usuarios`: criação de um usuário novo.*
+
+![Recomendações geradas](docs/evidencias/11-recomendacoes.png)
+
+*`GET /usuarios/{usuario_id}/recomendacoes`: livros recomendados com o motivo de cada um.*
+
+### 4. Os dados continuam depois de reiniciar
+
+![Reinício com etapas puladas](docs/evidencias/12-reinicio-etapas-puladas.png)
+
+*Depois de `docker compose down` e `docker compose up`: as etapas já feitas são puladas e a API liga em segundos.*
+
+![Usuário criado antes do reinício continua existindo](docs/evidencias/13-usuario-persistiu.png)
+
+*O usuário criado antes de desligar continua existindo, porque os dados ficam no volume.*
+
+#####
+
+## Como executar sem Docker (manual)
 
 Todos os comandos são rodados no terminal, na pasta raiz do projeto. Os passos 3 a 7 só precisam ser feitos **uma vez**.
 
@@ -135,10 +285,18 @@ data/                  fora do Git, gerada pelos scripts
   banco.db             banco de dados da API (passo 7)
 requirements.txt       bibliotecas do projeto
 .gitignore             arquivos que não vão para o GitHub
+Dockerfile             receita da imagem Docker
+docker-compose.yml     serviços preparar e api, e o volume de dados
+docker-compose.local-data.yml   opcional: usa a pasta data/ do computador
+docker/
+  preparar.py          roda os passos 3 a 7 dentro do Docker, pulando o que já foi feito
+DOCKER.md              guia detalhado do Docker
+docs/evidencias/       prints que mostram o Docker e o sistema funcionando
 ```
 
 * A pasta `data/` não vai para o GitHub, porque é grande demais. Cada pessoa gera a sua com os passos 3 a 7.
 * Cada pessoa tem o próprio banco (`data/banco.db`). Usuários criados num computador não aparecem nos outros.
+* Com Docker, a pasta `data/` fica num volume do Docker (veja [Como executar com Docker](#como-executar-com-docker-recomendado)).
 
 #####
 
