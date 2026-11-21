@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# OPCIONAL: usar a pasta ./data do seu computador em vez do volume do Docker.
+#
+# Serve para:
+#   * aproveitar o que você JÁ gerou rodando os scripts sem Docker (poupa o
+#     download de 1,4 GB e os passos de preparação);
+#   * plano B se o download pelo Docker falhar: coloque o book-genome.zip em
+#     ./data e o script de download percebe e pula o download.
+#
+# Como usar:
+#   docker compose -f docker-compose.yml -f docker-compose.local-data.yml up --build
+#
+# (o Compose troca o volume "dados" pela pasta ./data, porque os dois apontam
+#  para o mesmo caminho dentro do container: /app/data)
+# ---------------------------------------------------------------------------
+services:
+  preparar:
+    volumes:
+      - ./data:/app/data
+  api:
+    volumes:
+      - ./data:/app/data

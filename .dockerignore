@@ -1,0 +1,15 @@
+# Fora da imagem: a base é enorme e vive no volume; o resto é lixo de desenvolvimento
+data/
+venv/
+.venv/
+.git/
+.gitignore
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.md
+Dockerfile
+docker-compose*.yml
