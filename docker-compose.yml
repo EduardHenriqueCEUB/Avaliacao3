@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# Como usar:   docker compose up --build
+#
+# São 2 serviços que usam a MESMA imagem:
+#
+#   preparar  roda uma vez e termina: baixa a base, trata os dados, treina o
+#             modelo e cria o banco (docker/preparar.py). Nas próximas vezes
+#             ele só confere que está tudo pronto e sai em segundos.
+#   api       só liga depois que o "preparar" terminou com sucesso
+#             (a API se recusa a ligar sem o modelo e o banco).
+#
+# Os dados ficam no volume "dados" (montado em /app/data). Ele sobrevive a
+# "docker compose down", então usuários criados pela API não se perdem.
+# Para apagar TUDO e começar do zero:  docker compose down -v
+# ---------------------------------------------------------------------------
+name: recomendacao-livros
+
+# Os dois serviços constroem a MESMA imagem. O "build" é repetido nos dois de
+# propósito: sem ele, numa máquina zerada o Docker poderia tentar BAIXAR a
+# imagem "recomendacao-livros" da internet para o serviço "api" e falhar.
+# (A segunda construção é instantânea, porque usa o cache da primeira.)
+x-imagem: &imagem
+  build: .
+  image: recomendacao-livros:latest
+
+services:
+  preparar:
+    <<: *imagem
+    command: ["python", "docker/preparar.py"]
+    volumes:
+      - dados:/app/data
+    restart: "no"
+
+  api:
+    <<: *imagem
+    depends_on:
+      preparar:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    volumes:
+      - dados:/app/data
+    # O teste usa /tags (leve). O "GET /" conta 5 milhões de linhas no banco
+    # a cada chamada, o que seria pesado para rodar de 15 em 15 segundos.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/tags', timeout=5)"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  dados:
