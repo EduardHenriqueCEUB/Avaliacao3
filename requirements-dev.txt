@@ -1,0 +1,11 @@
+# Bibliotecas usadas só nos testes (não entram na imagem do Docker).
+# Instalar (com o venv ativo):  pip install -r requirements-dev.txt
+# Já instala junto as bibliotecas do projeto (requirements.txt).
+-r requirements.txt
+
+# Testes
+pytest==9.2.0
+pytest-cov==7.1.0
+
+# Cliente HTTP usado pelo TestClient do FastAPI para chamar a API nos testes
+httpx2==2.16.2
