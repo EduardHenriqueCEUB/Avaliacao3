@@ -11,11 +11,12 @@ Sistema de recomendação de livros com API em FastAPI e containerização com D
 
 ## Divisão do trabalho
 
-* 1 - Escolha do conjunto de dados: todo o grupo
+* 1 - Escolha do conjunto de dados: João Pedro Pinheiro Ghesti
 * 2 - Desenvolvimento do modelo de recomendação: Eduardo Henrique Moraes Santos
 * 3 - Criação da API com FastAPI: Eduardo Henrique Moraes Santos
 * 4 - Containerização com Docker: Thiago Castro Barreto
-* 5 - Documentação e testes: João Pedro Pinheiro Ghesti
+* 5 - Documentação (este README): todo o grupo
+* 5 - Testes unitários e de integração: João Pedro Pinheiro Ghesti
 
 #####
 
@@ -30,6 +31,10 @@ Sistema de recomendação de livros com API em FastAPI e containerização com D
   * fastapi 0.165.0
   * uvicorn 0.54.0
 * Banco de dados: SQLite, que já vem com o Python (não precisa instalar nada)
+* Só para os testes, com as versões exatas no `requirements-dev.txt` (não entram na imagem do Docker):
+  * pytest 9.2.0
+  * pytest-cov 7.1.0
+  * httpx2 2.16.2 (usado pelo `TestClient` do FastAPI)
 
 Use a mesma versão do Python em todos os computadores, para evitar diferenças.
 
@@ -263,6 +268,87 @@ http://127.0.0.1:8000/docs
 
 #####
 
+## Testes
+
+O projeto tem **246 testes automáticos**, unitários e de integração, feitos com o **pytest**.
+Eles rodam em cerca de 5 segundos, **sem internet e sem a base de 1,4 GB**, e não mexem na pasta `data/`.
+
+#### Como rodar
+
+Com o ambiente virtual ativo (passo 1 da seção [Como executar sem Docker](#como-executar-sem-docker-manual)), na pasta raiz do projeto:
+
+1 - Instale as bibliotecas dos testes (uma vez só; já instala junto as do projeto)
+
+```
+pip install -r requirements-dev.txt
+```
+
+2 - Rode os testes
+
+```
+pytest
+```
+
+* Deu certo quando a última linha mostrar `243 passed, 3 xfailed`, em verde.
+* Para ver o nome de cada teste: `pytest -v`
+* Para rodar só um arquivo: `pytest tests/test_api.py`
+* Para ver quanto do código os testes cobrem: `pytest --cov=app --cov=scripts --cov=docker --cov-report=term-missing`
+
+Não é preciso rodar os passos 3 a 7 antes: os testes criam os próprios dados.
+Testado no Python 3.13 e no 3.14.
+
+#### A base sintética
+
+Usar a base real nos testes seria lento (download de 1,4 GB) e dependeria de internet. Por isso o
+`tests/dados_sinteticos.py` monta uma **mini Book Genome falsa**, com os mesmos 4 arquivos e o mesmo formato da original:
+
+* 60 livros em 3 gêneros (fantasia, ficção científica e romance), com 12 tags: 3 fortes em cada gênero e 3 genéricas que todo livro tem um pouco
+* 60 usuários, cada um com um gênero favorito: dá nota 4 ou 5 para esse gênero e 1 ou 2 para outro
+* Alguns usuários com menos de 5 avaliações, que ficam fora do treino do colaborativo
+* Os mesmos problemas da base real, colocados de propósito: livro com ano 0, caractere invisível no título, livro repetido,
+  livro sem avaliações, nota 7, avaliação de livro que não existe e avaliação repetida
+
+Com isso, a resposta certa é conhecida: quem gosta de fantasia tem que receber fantasia. Os testes conferem exatamente isso.
+
+Antes de tudo, os testes rodam os scripts de verdade (`preparar_dados.py`, `treinar_modelo.py` e `criar_banco.py`) sobre essa
+base, numa pasta temporária. A API é testada com os arquivos gerados por eles, como acontece no Docker.
+
+#### O que é testado
+
+| Arquivo | Tipo | Testes | O que confere |
+|---|---|---|---|
+| `tests/test_preparar_dados.py` | unitário e integração | 30 | limpeza de texto, ano 0, livro repetido, notas inválidas, avaliação repetida, estatísticas, alinhamento do genome com livros e tags |
+| `tests/test_modelo.py` | unitário | 58 | treino do colaborativo, escala de 0 a 1, média bayesiana, perfil de gosto, notas baixas afastando, tags favoritas, motivo da recomendação, livros parecidos, livros novos sem retreino |
+| `tests/test_banco.py` | unitário | 25 | criar e buscar usuários, criar e trocar notas, apagar avaliações, transação "tudo ou nada", regra de nota de 1 a 5 no banco, livros novos, persistência no arquivo |
+| `tests/test_schemas.py` | unitário | 29 | validações do Pydantic (nota de 1 a 5, nome obrigatório, limite de 20 tags...) e os exemplos que aparecem no Swagger |
+| `tests/test_scripts.py` | unitário e integração | 27 | download simulado (sem internet), zip corrompido, falta de espaço em disco, arquivos do treino, banco igual ao CSV, banco existente não é apagado, métrica de acerto do `avaliar_modelo.py` |
+| `tests/test_docker_preparar.py` | unitário | 12 | ordem das etapas do serviço `preparar`, etapas já feitas são puladas, falha em qualquer etapa para com erro, banco criado com nome provisório |
+| `tests/test_api.py` | integração | 65 | todos os endpoints, códigos de resposta (200, 201, 204, 400, 404, 422), recomendações mudando na hora quando o gosto muda, dados que continuam depois de reiniciar a API, API que não liga sem modelo ou banco e o [roteiro de teste no Swagger](#roteiro-de-teste-no-swagger) de ponta a ponta |
+
+Os testes passam por **99% das linhas** de `app/`, `scripts/` e `docker/` (100% em `app/`). Ficam de fora só 12 linhas,
+quase todas mensagens na tela (como a conferência com "Harry Potter" no `treinar_modelo.py`) e as linhas `if __name__ == "__main__"`.
+
+#### Os requisitos do trabalho cobertos pelos testes
+
+* **Adicionar usuários:** `test_criar_usuario_*` (com e sem tags e avaliações, dados inválidos, tags e livros que não existem)
+* **Adicionar itens:** `test_criar_livro*`, `test_livro_novo_e_recomendado_na_hora`
+* **Obter recomendações:** `test_recomendacao_*`, `test_usuario_novo_sem_nada_recebe_populares`, `test_so_tags_favoritas_ja_personaliza`
+* **Atualizar as preferências:** `test_avaliar_livro_e_mudar_a_nota`, `test_atualizar_preferencias*` e `test_recomendacoes_mudam_quando_o_gosto_muda`
+* **Documentação no Swagger:** `test_swagger_e_openapi`, `test_exemplos_do_swagger_sao_validos`
+
+#### Os 3 testes "xfail" (falha esperada)
+
+Os testes encontraram um bug no `app/modelo.py`: quando se pedem mais recomendações do que existem livros ainda não avaliados,
+os livros que o usuário **já avaliou** voltam no fim da lista, com pontuação `-inf` (que vira `-Infinity` no JSON, um valor inválido).
+O mesmo acontece em `populares` com o parâmetro `excluir`.
+
+* Com a base real isso quase nunca acontece: o máximo é 100 recomendações por pedido, então o usuário teria que ter avaliado mais de 9.274 livros.
+* Os 3 testes que mostram o bug estão marcados como `xfail` ("falha esperada"). Assim a bateria fica verde e o bug fica registrado.
+* A marcação é `strict`: quando o bug for corrigido, o pytest avisa, e é só tirar o `@pytest.mark.xfail`.
+* A correção sugerida está no comentário dos testes, em `tests/test_modelo.py`.
+
+#####
+
 ## Estrutura do projeto
 
 ```
@@ -283,7 +369,19 @@ data/                  fora do Git, gerada pelos scripts
   processed/           arquivos tratados (passo 4)
   modelo/              modelo treinado e resultado da avaliação (passos 5 e 6)
   banco.db             banco de dados da API (passo 7)
+tests/
+  conftest.py              prepara os dados, o banco e a API para os testes
+  dados_sinteticos.py      monta a mini Book Genome falsa usada nos testes
+  test_preparar_dados.py   testes do tratamento da base
+  test_modelo.py           testes do modelo de recomendação
+  test_banco.py            testes do banco de dados
+  test_schemas.py          testes das validações de entrada e saída
+  test_scripts.py          testes do download, do treino, do banco e da avaliação
+  test_docker_preparar.py  testes do serviço preparar do Docker
+  test_api.py              testes de integração de todos os endpoints
 requirements.txt       bibliotecas do projeto
+requirements-dev.txt   bibliotecas dos testes (pytest)
+pytest.ini             configuração do pytest
 .gitignore             arquivos que não vão para o GitHub
 Dockerfile             receita da imagem Docker
 docker-compose.yml     serviços preparar e api, e o volume de dados
@@ -472,3 +570,6 @@ Detalhes importantes:
 * **Livros novos não participam do colaborativo.** Como ainda não têm vizinhos calculados, eles só aparecem pelo conteúdo. Por isso aparecem mais nas recomendações quando o `peso_conteudo` é maior.
 
 * **Os bancos não são compartilhados.** Cada computador tem o próprio `data/banco.db`.
+
+* **Pedindo mais livros do que existem sem avaliar, os já avaliados voltam na lista.** Encontrado pelos testes. Veja
+  [Os 3 testes "xfail"](#os-3-testes-xfail-falha-esperada).
